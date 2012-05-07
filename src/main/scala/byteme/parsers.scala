@@ -1,5 +1,7 @@
 package byteme
 
+import java.nio.{ByteOrder, ByteBuffer}
+
 object Parsers {
   object byte extends Parser[Byte]{
     def apply(input: Input) =
@@ -12,7 +14,7 @@ object Parsers {
   implicit def literalByte(b:Byte) = byte.where(_ == b, "expected " + b)
   
   object Literal {
-    implicit def int(i:Int)   = byte.where(_ == i.toByte, "expected " + i.toByte)
+    implicit def int(i:Int)   = byte.where(_ == i.toByte, "expected " + i)
     implicit def char(c:Char) = byte.where(_ == c.toByte, "expected " + c)
   }
 
@@ -26,4 +28,17 @@ object Parsers {
       case Failure(msg, input) => Error(msg, input)
     }
   }
+
+  abstract class Endian(order:ByteOrder) {
+    private def buffer(l:List[Byte]) = ByteBuffer.wrap(l.toArray).order(order)
+
+    val int16  = (byte * 2) ^^ { buffer(_).getShort(0) }
+    val int32  = (byte * 4) ^^ { buffer(_).getInt(0) }
+    val int64  = (byte * 8) ^^ { buffer(_).getLong(0) }
+    val float  = (byte * 4) ^^ { buffer(_).getFloat(0) }
+    val double = (byte * 8) ^^ { buffer(_).getDouble(0) }
+  }
+
+  object LittleEndian extends Endian(ByteOrder.LITTLE_ENDIAN)
+  object BigEndian extends Endian(ByteOrder.BIG_ENDIAN)
 }

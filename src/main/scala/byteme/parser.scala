@@ -2,8 +2,6 @@ package byteme
 
 import Parsers.{success, commit}
 
-case class ~[+A, +B](_1:A, _2:B)
-
 object Parser {
   def apply[A](f:Input => Result[A]):Parser[A] = new Parser[A]{
     def apply(input:Input) = f(input)
@@ -28,24 +26,14 @@ trait Parser[+A] extends (Input => Result[A]){ self =>
     } yield new ~(aa, bb)
   }
   
-  def ~> [B] (b: => Parser[B]):Parser[B] = {
-    lazy val other = b
-    for{
-      _ <- this
-      bb <- other
-    } yield bb
-  }
+  def ~> [B] (b: => Parser[B]):Parser[B] = 
+    this ~ b ^^ { _._2 }
+
+  def <~ [B] (b: => Parser[B]):Parser[A] =
+    this ~ b ^^ { _._1 }
   
   def ~>! [B] (b: => Parser[B]):Parser[B] = 
     this ~> commit(b)
-
-  def <~ [B] (b: => Parser[B]):Parser[A] = {
-    lazy val other = b
-    for {
-      aa <- this
-      _ <- other
-    } yield aa
-  }
 
   def | [B >: A](b: => Parser[B]):Parser[B] = {
     lazy val other = b
@@ -58,7 +46,8 @@ trait Parser[+A] extends (Input => Result[A]){ self =>
 
   def >> [B](f:A => Parser[B]):Parser[B] = flatMap(f)
 
-  def flatMap[B](f:A => Parser[B]) = Parser{ apply(_).flatMapWithNext(f) }
+  def flatMap[B](f:A => Parser[B]):Parser[B] = 
+    Parser{ apply(_).flatMapWithNext(f) }
 
   def map[B](f:A => B) = Parser{ apply(_).map(f) }
 

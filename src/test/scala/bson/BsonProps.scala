@@ -8,8 +8,8 @@ import org.bson.{BSON, BasicBSONEncoder, BSONObject, BasicBSONObject}
 import org.bson.types.{Symbol => BsonSymbol, MaxKey => BsonMaxKey, MinKey => BsonMinKey, _}
 import org.bson.io.BasicOutputBuffer
 
-import java.util.Date
 import java.util.regex.Pattern
+import java.util.{Arrays, Date}
 
 object BsonProps extends Properties("bson"){
 
@@ -52,7 +52,7 @@ object BsonProps extends Properties("bson"){
   }
 
   property("\\x03 document") = forAll(cStr, cStr, arbitrary[String]){ (name, nested, value) =>
-    check(name, new BasicBSONObject(nested, value), Document(List(Element(nested, MString(value)))))
+    check(name, new BasicBSONObject(nested, value), Document(List((nested, MString(value)))))
   }
 
   property("\\x04 array") = forAll(cStr, arbitrary[List[String]]){ (name, value) =>
@@ -93,7 +93,7 @@ object BsonProps extends Properties("bson"){
   }
 
   property("\\x0F javascript code w/scope") = forAll(cStr, arbitrary[String], cStr, arbitrary[Double]){ (name, value, nested, nval) =>
-    check(name, new CodeWScope(value, new BasicBSONObject(nested, nval)), MCodeWithScope(value, Document(List(Element(nested, MDouble(nval))))))
+    check(name, new CodeWScope(value, new BasicBSONObject(nested, nval)), MCodeWithScope(value, Document(List((nested, MDouble(nval))))))
   }
 
   property("\\x10 32 bit integer") = forAll(cStr, arbitrary[Int]){ (name, value) =>
@@ -118,9 +118,16 @@ object BsonProps extends Properties("bson"){
   }
 
   def check(name:String, any:Any, value:Value) = {
-    val encoded = encode(new BasicBSONObject(name, any))
-    val document = BsonParsers.document(encoded).get
-    Document(List(Element(name, value))) == document
+    lazy val encoded = encode(new BasicBSONObject(name, any))
+    lazy val document = BsonParsers.document(encoded).get
+    lazy val output = BsonOutput.document(document).toArray
+    lazy val unpickled = BsonPicklers.document.unpickle(encoded).get
+    lazy val pickled = BsonPicklers.document.pickle(document).toArray    
+    
+    (Document(List((name, value))) == document).label("parser") &&
+    Arrays.equals(output, encoded).label("output") &&
+    (unpickled == document).label("unpickle") &&
+    Arrays.equals(pickled, encoded).label("pickle")                                             
   }
 
   def encode(bson:BSONObject):Array[Byte] = {

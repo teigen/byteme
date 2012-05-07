@@ -1,22 +1,31 @@
 package ubjson
 
-import org.scalacheck.Properties
+import org.scalacheck.{Properties, Prop}
+import Prop._
+import java.util.Arrays
 
 object UbjsonProps extends Properties("ubjson"){
 
-  property("couchDB4k")      = shouldParse("CouchDB4k.ubj")
-  property("mediaContent")   = shouldParse("MediaContent.ubj")
-  property("twitterContent") = shouldParse("TwitterTimeline.ubj")
-
-  def shouldParse(f:String) = {
-    val data = readFile("src/test/resources/ubjson/" + f)
+  property("couchDB4k")      = check("CouchDB4k.ubj")
+  
+  property("mediaContent")   = check("MediaContent.ubj")
+  
+  property("twitterContent") = check("TwitterTimeline.ubj")
+  
+  def check(f:String) = {
+    val data = readFile(f)
     val result = UbjsonParsers.value(data)
-    result.isSuccess
+    val unpickled = UbjsonPicklers.value.unpickle(data)
+    
+    result.isSuccess.label("parser") &&
+    Arrays.equals(data, UbjsonOutput.value(result.get).toArray).label("output") &&
+    unpickled.isSuccess.label("unpickle") &&
+    Arrays.equals(data, UbjsonPicklers.value.pickle(unpickled.get).toArray).label("pickle")
   }
 
   def readFile(f:String) = {
     import java.io._
-    val file = new RandomAccessFile(f, "r")
+    val file = new RandomAccessFile("src/test/resources/ubjson/"+f, "r")
     val b = Array.ofDim[Byte](file.length().toInt)
     file.read(b)
     file.close()

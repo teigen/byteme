@@ -27,6 +27,9 @@ trait Pickler[A] { self =>
   
   def * (times:Int) = 
     Pickler[List[A]](Parser(unpickle) * times, Output * (times, pickle))
+
+  def *[B](pickler: => Pickler[B])(implicit ev:A => Int, ev1:Int => A) =
+    Pickler[List[B]](Parser[Int](unpickle(_).map(ev)) >> (Parser(pickler.unpickle) *), l => pickle(l.size) ++ (Output * pickler.pickle)(l))
   
   def wrap[B](w:A => B)(u:B => A) = 
     Pickler[B](unpickle(_).map(w), v => pickle(u(v)))

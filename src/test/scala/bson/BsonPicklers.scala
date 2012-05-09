@@ -7,7 +7,7 @@ import Literal.int
 
 object BsonPicklers {
 
-  lazy val document = int32 lengthInclusive (elist <~ 0x00).wrap(Document)(Document.unapply(_).get)
+  lazy val document = int32 lengthInclusive (elist <~ 0x00).wrap(Document)(_.elements)
   
   lazy val elist = element.*
   
@@ -72,7 +72,7 @@ object BsonPicklers {
   
   val mDouble    = Wrap[Double, MDouble](MDouble, _.value)
   val mString    = Wrap[String, MString](MString, _.value)
-  val mArray     = Wrap[Document, MArray](BsonParsers.toArray, BsonOutput.toDoc)
+  val mArray     = Wrap[Document, MArray](toArray, toDoc)
   val mSymbol    = Wrap[String, MSymbol](s => MSymbol(Symbol(s)), _.symbol.name)
   val mCode      = Wrap[String, MCode](MCode, _.code)
   val mInt       = Wrap[Int, MInt](MInt, _.value)
@@ -83,4 +83,10 @@ object BsonPicklers {
   val mBoolean   = Wrap[Boolean, MBoolean](MBoolean, _.value)
   val mObjectId  = collections.array[Byte] ^^ Wrap[Array[Byte], MObjectId](MObjectId, _.data)
   val mRegexp    = Wrap[String ~ String, MRegexp]({ case p ~ o => MRegexp(p, o)}, { case MRegexp(p, o) => new ~(p, o) })
+
+  def toArray(document:Document) =
+    MArray(document.elements.map{ case (name, value) => value })
+
+  def toDoc(m:MArray) =
+    Document(m.values.zipWithIndex.map{ case (v, i) => (i.toString, v) })
 }

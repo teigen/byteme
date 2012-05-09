@@ -67,4 +67,6 @@ trait Parser[+A] extends (Input => Result[A]){ self =>
       case n => n
     }
   }
+  
+  def constant[B >: A](value:B) = where(_ == value, "expected " + value)
 }

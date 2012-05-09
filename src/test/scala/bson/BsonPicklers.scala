@@ -36,22 +36,12 @@ object BsonPicklers {
 
   lazy val cstring = byte.takeWhile(_ != 0x00) <~ 0x00 ^^ utf8
   
-  lazy val string = {
-    val unpickle = {
-      import Parsers.Literal.int
-      Parser(int32.unpickle) >> (n => (Parsers.byte * (n - 1))) <~ 0x00 ^^ utf8.wrap
-    }
-    
-    def pickle(value:String) = {
-      val out = (Output * byte.pickle)(utf8.unwrap(value)) ++ Output.byte(0x00)
-      int32.pickle(out.length) ++ out
-    }
-    Pickler(unpickle, pickle)
-  }
+  lazy val string =
+    (int32.wrap(_ - 1)(_ + 1) * byte) <~ 0x00 ^^ utf8
 
   lazy val binary = {
     val unpickle = 
-      Parser(int32.unpickle) >> {l => Parser(subtype.unpickle) ~ (Parser(byte.unpickle) * l) } ^^ { case s ~ b => MBinary(s, b.toArray) }
+      int32.unpickle >> {l => subtype.unpickle ~ (byte.unpickle * l) } ^^ { case s ~ b => MBinary(s, b.toArray) }
     def pickle(b:MBinary) = 
       int32.pickle(b.value.length) ++ subtype.pickle(b.subtype) ++ Output.array(b.value)
     Pickler(unpickle, pickle)

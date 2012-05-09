@@ -11,11 +11,11 @@ object Parsers {
     def unsigned = map(_ & 0xFF)
   }
 
-  implicit def literalByte(b:Byte) = byte.where(_ == b, "expected " + b)
+  implicit def literalByte(b:Byte) = byte.constant(b)
   
   object Literal {
     implicit def int(i:Int)   = byte.where(_ == i.toByte, "expected " + i)
-    implicit def char(c:Char) = byte.where(_ == c.toByte, "expected " + c)
+    implicit def char(c:Char) = byte.where(_ == c.toByte, "expected '" + c + "'")
   }
 
   def fail(msg:String):Parser[Nothing] = Parser{ input => Failure(msg, input) }

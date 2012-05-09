@@ -24,36 +24,14 @@ object UbjsonPicklers {
     length('s', 'S') ^^ strings.utf8
   
   lazy val container:Pickler[Value] = 
-    ( count('o', 'O')(field).wrap(UObject)(_.fields)
-    | count('a', 'A')(value).wrap(UArray)(_.values))
+    ( count('o', 'O', field).wrap(UObject)(_.fields)
+    | count('a', 'A', value).wrap(UArray)(_.values))
   
   lazy val field = (string ~ value).wrap{ case a ~ b => (a, b) }{ case (a, b) => new ~(a, b) }
   
-  def count[A](small:Char, large:Char)(pickler:Pickler[A]):Pickler[List[A]] = {    
-    val parser = 
-      ( Parsers.Literal.char(small) ~> Parsers.byte.unsigned 
-      | Parsers.Literal.char(large) ~> Parser(int32.unpickle)) >> (Parser(pickler.unpickle) *)
-    
-    def output(value:List[A]) = {
-      val size =
-        if(value.size < 256) Output.Literal.char(small) ++ Output.byte.unsigned(value.size)
-        else Output.Literal.char(large) ++ int32.pickle(value.size)      
-      size ++ (Output * pickler.pickle)(value)
-    }
-    Pickler(parser, output)
-  }
+  def count[A](small:Char, large:Char, pickler:Pickler[A]):Pickler[List[A]] =
+    (small ~> byte.unsigned | large ~> int32) * pickler
   
-  def length(small:Char, large:Char):Pickler[Array[Byte]] = {
-    val parser =
-      ((Parsers.Literal.char(small) ~> Parsers.byte.unsigned
-      | Parsers.Literal.char(large) ~> Parsers.BigEndian.int32) >> (Parsers.byte *)) ^^ (_.toArray)
-    
-    def output(value:Array[Byte]) = {
-      val length =
-        if(value.length < 256) Output.Literal.char(small) ++ byte.unsigned.pickle(value.length)
-        else Output.Literal.char(large) ++ int32.pickle(value.length)
-      length ++ value
-    }
-    Pickler(parser, output) 
-  }
+  def length(small:Char, large:Char):Pickler[Array[Byte]] =
+    (small ~> byte.unsigned | large ~> int32) * byte ^^ collections.array
 }

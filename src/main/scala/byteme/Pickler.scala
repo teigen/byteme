@@ -1,108 +1,82 @@
 package byteme
 
 object Pickler {
-  def apply[A](u:Input => Result[A], p:A => Output):Pickler[A] = new Pickler[A]{
-    def pickle(value: A) = p(value)
-    def unpickle(input: Input) = u(input)
-  }
+  def apply[A](unpickle:Parser[A], pickle:A => Output) = new Pickler[A](unpickle, a => Some(pickle(a)))
 }
 
-trait Pickler[A] { self =>
+class Pickler[A](val unpickle:Parser[A], val tryPickle:A => Option[Output]) { self =>
   
-  def pickle(value:A):Output
-  def unpickle(input:Input):Result[A]
-  
-  def tryPickle(value:A):Option[Output] = Some(pickle(value))
+  def pickle(value:A) = tryPickle(value).get  
   
   def ~ [B](rhs: => Pickler[B]):Pickler[A ~ B] = {
     lazy val other = rhs
-    val parse = for{
-      a <- Parser(self.unpickle)
-      b <- Parser(other.unpickle)
-    } yield new ~(a, b)
-    Pickler[A ~ B](parse, { case a ~ b => self.pickle(a) ++ rhs.pickle(b) })
+    Pickler(unpickle ~ other.unpickle, { case a ~ b => self.pickle(a) ++ rhs.pickle(b) })
   }
   
-  def * = Pickler(Parser(unpickle) *, Output * pickle)
+  def * = Pickler(unpickle *, Output * pickle)
   
-  def * (times:Int) = 
-    Pickler[List[A]](Parser(unpickle) * times, Output * (times, pickle))
+  def * (times:Int) = Pickler[List[A]](unpickle * times, Output * (times, pickle))
 
-  def *[B](pickler: => Pickler[B])(implicit ev:A => Int, ev1:Int => A) =
-    Pickler[List[B]](Parser[Int](unpickle(_).map(ev)) >> (Parser(pickler.unpickle) *), l => pickle(l.size) ++ (Output * pickler.pickle)(l))
+  def *[B](pickler: => Pickler[B])(implicit ev:A => Int, ev1:Int => A) = {
+    lazy val b = pickler
+    Pickler[List[B]](unpickle.map(ev) >> (pickler.unpickle *), l => pickle(l.size) ++ (Output * b.pickle)(l))
+  }
+
+  def lengthExclusive[B](pickler: => Pickler[B])(implicit ev:A => Int, ev1:Int => A) = {
+    lazy val b = pickler
+    def pickle(value:B) = {
+      val out = b.pickle(value)
+      self.pickle(out.length) ++ out
+    }
+    Pickler(unpickle.map(ev) ~> pickler.unpickle, pickle)
+  }
   
   def wrap[B](w:A => B)(u:B => A) = 
-    Pickler[B](unpickle(_).map(w), v => pickle(u(v)))
+    new Pickler[B](unpickle.map(w), v => tryPickle(u(v)))
   
-  def | [T >: A, B <: T](rhs: => Pickler[B])(implicit a:Picklers.Reify[A], b:Picklers.Reify[B]):Pickler[T] = new Pickler[T]{
+  def | [T >: A, B <: T](rhs: => Pickler[B])(implicit a:Picklers.Reify[A], b:Picklers.Reify[B]):Pickler[T] = {
     lazy val other = rhs
-    
-    override def tryPickle(t:T) = a.reify(t).flatMap(self.tryPickle).orElse(b.reify(t).flatMap(other.tryPickle))
-    
-    def pickle(t:T) = tryPickle(t).get
-    
-    def unpickle(input:Input) = {
-      val a:Parser[T] = Parser(self.unpickle)
-      val b:Parser[T] = Parser(other.unpickle)
-      (a | b)(input)
-    }
+    val left:Parser[T] = unpickle
+    lazy val right:Parser[T] = other.unpickle
+    new Pickler[T](left | right, t => a.reify(t).flatMap(tryPickle) orElse b.reify(t).flatMap(other.tryPickle))
   }
-  
+   
   def <~ [B](const:Picklers.Constant[B]) =
-    Pickler[A](Parser(unpickle) <~ Parser(const.unpickle), a => pickle(a) ++ const.pickle(const.constant))
+    Pickler[A](unpickle <~ const.unpickle, a => pickle(a) ++ const.pickle(const.constant))
   
   def ^^ [B](w:Picklers.Wrap[A, B]):Pickler[B] = wrap(w.wrap)(w.unwrap)
   
   def takeWhile(f: A => Boolean) =
-    Pickler[List[A]](Parser(unpickle).takeWhile(f), Output * pickle)
+    Pickler[List[A]](unpickle.takeWhile(f), Output * pickle)
 }
 
 object Picklers {
   
-  object byte extends Pickler[Byte]{
-    def pickle(a: Byte) = Output.byte(a)
-    def unpickle(input: Input) = Parsers.byte(input)
-    
-    def unsigned = Pickler(Parsers.byte.unsigned, Output.byte.unsigned)      
+  object byte extends Pickler[Byte](Parsers.byte, b => Some(Output.byte(b))) {
+    val unsigned = FixedLength(1, Parsers.byte.unsigned, Output.byte.unsigned)
   }
   
-  case class Constant[A](constant:A, underlying:Pickler[A]) extends Pickler[A]{ self =>
-    
-    override def tryPickle(a:A) = if(a == constant) Some(underlying.pickle(a)) else None
-    def pickle(value: A) = tryPickle(value) getOrElse sys.error("expected " + constant +", but got " + value)
-    def unpickle(input: Input) = Parser(underlying.unpickle).where(_ == constant, "expected " + constant)(input)
-
-    def ~> [B] (rhs:Pickler[B]) = new Pickler[B]{
-      lazy val other = rhs
-      def pickle(value: B) = self.pickle(constant) ++ other.pickle(value)
-      def unpickle(input: Input) = self.unpickle(input).flatMapWithNext(_ => other.unpickle)
-    }
-    
-    def ^^^ [B](b: => B) = Constant(b, self.wrap(_ => b)(_ => self.constant))
+  case class Constant[A](constant:A, underlying:Pickler[A]) extends Pickler[A](underlying.unpickle.constant(constant), v => if(v == constant) Some(underlying.pickle(v)) else None){ self =>
+    def ~> [B] (rhs: => Pickler[B]) = (this ~ rhs).wrap{ case a ~ b => b }{b => new ~(constant, b) }    
+    def ^^^ [B](b: => B) = Constant(b, wrap(_ => b)(_ => constant))
   }
   
-  case class FixedLength(length:Int, underlying:Pickler[Int]) extends Pickler[Int]{ self =>
-    override def tryPickle(value:Int) = underlying.tryPickle(value)
-    def pickle(value: Int) = underlying.pickle(value)
-    def unpickle(input: Input) = underlying.unpickle(input)
+  trait FixedLength { self:Pickler[Int] =>
+    def length:Int
     
     def lengthInclusive[A](pickler:Pickler[A]) = {
       // todo, check that unpickler consumes the specified number of bytes
-      val unpickle = Parser(underlying.unpickle) ~> Parser(pickler.unpickle)
       def pickle(value:A) = {
         val out = pickler.pickle(value)
-        underlying.pickle(out.length + length) ++ out
+        self.pickle(out.length + length) ++ out
       }      
-      Pickler(unpickle, pickle)
+      Pickler(unpickle ~> pickler.unpickle, pickle)
     }
-    
-    def lengthExclusive[A](pickler:Pickler[A]) = {
-      val unpickle = Parser(underlying.unpickle) ~> Parser(pickler.unpickle)
-      def pickle(value:A) = {
-        val out = pickler.pickle(value)
-        underlying.pickle(out.length) ++ out
-      }
-      Pickler(unpickle, pickle)
+  }
+  
+  object FixedLength{
+    def apply(l:Int, unpickle:Parser[Int], pickle:Int => Output) = new Pickler[Int](unpickle, a => Some(pickle(a))) with FixedLength {
+      def length = l
     }
   }
   
@@ -117,7 +91,7 @@ object Picklers {
   
   abstract class Endian(parser:Parsers.Endian, output:Output.Endian) {
     val int16  = Pickler(parser.int16, output.int16)
-    val int32  = FixedLength(4, Pickler(parser.int32, output.int32))
+    val int32  = FixedLength(4, parser.int32, output.int32)
     val int64  = Pickler(parser.int64, output.int64)
     val float  = Pickler(parser.float, output.float)
     val double = Pickler(parser.double, output.double)

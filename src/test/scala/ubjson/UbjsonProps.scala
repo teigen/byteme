@@ -14,12 +14,12 @@ object UbjsonProps extends Properties("ubjson"){
   
   def check(f:String) = {
     val data = readFile(f)
-    val result = UbjsonParsers.value(data)
-    val unpickled = UbjsonPicklers.value.unpickle(data)
+    lazy val result = UbjsonParsers.value(data)
+    lazy val unpickled = UbjsonPicklers.value.unpickle(data)    
     
     result.isSuccess.label("parser") &&
     Arrays.equals(data, UbjsonOutput.value(result.get).toArray).label("output") &&
-    unpickled.isSuccess.label("unpickle") &&
+    (unpickled.get == result.get).label("unpickle") &&
     Arrays.equals(data, UbjsonPicklers.value.pickle(unpickled.get).toArray).label("pickle")
   }
 

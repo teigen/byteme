@@ -3,12 +3,29 @@ package byteme
 import java.nio.{ByteOrder, ByteBuffer}
 
 object Parsers {
+  def bytes(n:Int):Parser[Array[Byte]] =
+    Parser{ input =>
+      if(n <= input.length) {
+        val (value, next) = input.take(n)
+        Success(value, next)
+      } else Failure("eof (cannot consume " + n + " bytes)", input)
+    }
+  
   object byte extends Parser[Byte]{
     def apply(input: Input) =
       if(input.atEnd) Failure("eof", input)
       else Success(input.first, input.rest)
     
-    def unsigned = map(_ & 0xFF)
+    def unsigned = map(_ & 0xFF)    
+    
+    def until(b:Byte):Parser[Array[Byte]] =
+      Parser{ input =>
+        val index = input.indexOf(b)
+        if(index != -1){
+          val (value, next) = input.take(index)
+          Success(value, next)
+        } else Failure("eof (cannot find '" + b + "')", input)
+      }
   }
 
   implicit def literalByte(b:Byte) = byte.constant(b)
@@ -30,13 +47,13 @@ object Parsers {
   }
 
   abstract class Endian(order:ByteOrder) {
-    private def buffer(l:List[Byte]) = ByteBuffer.wrap(l.toArray).order(order)
+    private def buffer(l:Array[Byte]) = ByteBuffer.wrap(l).order(order)
 
-    val int16  = (byte * 2) ^^ { buffer(_).getShort(0) }
-    val int32  = (byte * 4) ^^ { buffer(_).getInt(0) }
-    val int64  = (byte * 8) ^^ { buffer(_).getLong(0) }
-    val float  = (byte * 4) ^^ { buffer(_).getFloat(0) }
-    val double = (byte * 8) ^^ { buffer(_).getDouble(0) }
+    val int16  = bytes(2) ^^ { buffer(_).getShort(0) }
+    val int32  = bytes(4) ^^ { buffer(_).getInt(0) }
+    val int64  = bytes(8) ^^ { buffer(_).getLong(0) }
+    val float  = bytes(4) ^^ { buffer(_).getFloat(0) }
+    val double = bytes(8) ^^ { buffer(_).getDouble(0) }
   }
 
   object LittleEndian extends Endian(ByteOrder.LITTLE_ENDIAN)

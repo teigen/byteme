@@ -1,7 +1,8 @@
 package byteme
 
-import org.scalacheck.{Properties, Prop}
+import org.scalacheck.{Properties, Prop, Arbitrary, Gen}
 import Prop._
+import Arbitrary.arbitrary
 import java.util.Arrays
 
 object ParserProps extends Properties("Parser"){
@@ -108,5 +109,16 @@ object ParserProps extends Properties("Parser"){
   property("where") = forAll{ (a:Byte, msg:String) =>
     val Failure(m, _) = byte.where(_ => false, msg)(Array(a))
     m == msg
+  }
+  
+  property("bytes") = forAll(arbitrary[Array[Byte]], Gen.posNum[Int]) { (a, times) =>
+    (times <= a.length) ==> Arrays.equals((bytes(times))(a).get, a.take(times))
+  }
+  
+  property("until") = forAll { (a:Array[Byte], b:Byte) =>
+    val index = a.indexOf(b)
+    val result = byte.until(b)(a) 
+    ((index == -1) ==> !result.isSuccess).label("failure") ||
+    ((index != -1) ==> (result.get == a.take(index))).label("success")
   }
 }

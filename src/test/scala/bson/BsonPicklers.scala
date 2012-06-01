@@ -17,7 +17,7 @@ object BsonPicklers {
     | 0x03 ~> ename ~ document                                         ^^ tuple
     | 0x04 ~> ename ~ (document ^^ mArray)                             ^^ tuple
     | 0x05 ~> ename ~ binary                                           ^^ tuple
-    | 0x07 ~> ename ~ (byte * 12 ^^ mObjectId)                         ^^ tuple
+    | 0x07 ~> ename ~ (bytes(12) ^^ mObjectId)                         ^^ tuple
     | 0x08 ~> ename ~ (( 0x00 ^^^ false | 0x01 ^^^ true ) ^^ mBoolean) ^^ tuple
     | 0x09 ~> ename ~ (int64 ^^ mDateTime)                             ^^ tuple
     | 0x0A ~> ename.wrap(_ -> MNull)(_._1)
@@ -34,14 +34,14 @@ object BsonPicklers {
   
   lazy val ename = cstring
 
-  lazy val cstring = byte.takeWhile(_ != 0x00) <~ 0x00 ^^ utf8
+  lazy val cstring = byte.until(0x00) <~ 0x00 ^^ strings.utf8
   
   lazy val string =
-    (int32.wrap(_ - 1)(_ + 1) * byte) <~ 0x00 ^^ utf8
+    (int32.wrap(_ - 1)(_ + 1).bytes) <~ 0x00 ^^ strings.utf8
 
   lazy val binary = {
     val unpickle = 
-      int32.unpickle >> {l => subtype.unpickle ~ (byte.unpickle * l) } ^^ { case s ~ b => MBinary(s, b.toArray) }
+      int32.unpickle >> {l => subtype.unpickle ~ bytes(l).unpickle } ^^ { case s ~ b => MBinary(s, b) }
     def pickle(b:MBinary) = 
       int32.pickle(b.value.length) ++ subtype.pickle(b.subtype) ++ Output.array(b.value)
     Pickler(unpickle, pickle)
@@ -58,8 +58,6 @@ object BsonPicklers {
   
   def tuple[A, B] = Wrap[A ~ B, (A, B)]({ case a ~ b => (a, b)}, { case (a, b) => new ~(a, b) })
   
-  val utf8 = collections.array[Byte] ^^ strings.utf8
-  
   val mDouble    = Wrap[Double, MDouble](MDouble, _.value)
   val mString    = Wrap[String, MString](MString, _.value)
   val mArray     = Wrap[Document, MArray](toArray, toDoc)
@@ -71,7 +69,7 @@ object BsonPicklers {
   val mCodeWs    = Wrap[String ~ Document, MCodeWithScope]({ case c ~ s => MCodeWithScope(c, s)}, { case MCodeWithScope(c, s) => new ~(c, s) })
   val mTimestamp = Wrap[Int ~ Int, MTimestamp]({ case inc ~ time => MTimestamp(time, inc) }, { case MTimestamp(time, inc) => new ~(inc, time)})
   val mBoolean   = Wrap[Boolean, MBoolean](MBoolean, _.value)
-  val mObjectId  = collections.array[Byte] ^^ Wrap[Array[Byte], MObjectId](MObjectId, _.data)
+  val mObjectId  = Wrap[Array[Byte], MObjectId](MObjectId, _.data)
   val mRegexp    = Wrap[String ~ String, MRegexp]({ case p ~ o => MRegexp(p, o)}, { case MRegexp(p, o) => new ~(p, o) })
 
   def toArray(document:Document) =

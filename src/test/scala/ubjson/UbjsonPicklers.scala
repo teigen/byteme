@@ -33,5 +33,5 @@ object UbjsonPicklers {
     (small ~> byte.unsigned | large ~> int32) * pickler
   
   def length(small:Char, large:Char):Pickler[Array[Byte]] =
-    (small ~> byte.unsigned | large ~> int32) * byte ^^ collections.array
+    (small ~> byte.unsigned | large ~> int32).bytes
 }

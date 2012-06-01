@@ -29,10 +29,10 @@ object Output {
     def write(array: Array[Byte], from: Int) {}
   }
   
-  def * [A](times:Int, f:A => Output):List[A] => Output =
+  def * [A](times:Int, f:A => Output):Traversable[A] => Output =
     list => if(list.size == times) (Output * f)(list) else sys.error("requires input of size " + times + ", but got of size " + list.size) 
   
-  def * [A](f:A => Output): List[A] => Output =
+  def * [A](f:A => Output): Traversable[A] => Output =
     list => list.foldLeft(Output.empty)((o, e) => o ++ f(e))
 
   implicit object byte extends (Byte => Output){

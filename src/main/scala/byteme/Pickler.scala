@@ -21,8 +21,12 @@ class Pickler[A](val unpickle:Parser[A], val tryPickle:A => Option[Output]) { se
     lazy val b = pickler
     Pickler[List[B]](unpickle.map(ev) >> (pickler.unpickle *), l => pickle(l.size) ++ (Output * b.pickle)(l))
   }
+  
+  def bytes (implicit ev:A => Int, ev1:Int => A) = 
+    Pickler[Array[Byte]](unpickle.map(ev) >> Parsers.bytes, l => pickle(l.length) ++ Output.array(l))
 
   def lengthExclusive[B](pickler: => Pickler[B])(implicit ev:A => Int, ev1:Int => A) = {
+    // TODO, verify number of consumed bytes on unpickle
     lazy val b = pickler
     def pickle(value:B) = {
       val out = b.pickle(value)
@@ -52,8 +56,15 @@ class Pickler[A](val unpickle:Parser[A], val tryPickle:A => Option[Output]) { se
 
 object Picklers {
   
+  def bytes(n:Int):Pickler[Array[Byte]] =
+    Pickler[Array[Byte]](Parsers.bytes(n), arr => (Output * (n, byte.pickle))(arr))  
+  
   object byte extends Pickler[Byte](Parsers.byte, b => Some(Output.byte(b))) {
+    override val unpickle = Parsers.byte
     val unsigned = FixedLength(1, Parsers.byte.unsigned, Output.byte.unsigned)
+    
+    def until(b:Byte) =
+      Pickler[Array[Byte]](Parsers.byte.until(b), arr => Output.array(arr.takeWhile(_ != b)))
   }
   
   case class Constant[A](constant:A, underlying:Pickler[A]) extends Pickler[A](underlying.unpickle.constant(constant), v => if(v == constant) Some(underlying.pickle(v)) else None){ self =>
@@ -161,9 +172,5 @@ object Picklers {
   object strings {
     def apply(name:String) = Wrap[Array[Byte], String](b => new String(b, name), _.getBytes(name)) 
     val utf8 = apply("UTF-8")
-  }
-  
-  object collections {
-    def array[A : ClassManifest] = Wrap[List[A], Array[A]](_.toArray, _.toList)
-  }
+  }  
 }

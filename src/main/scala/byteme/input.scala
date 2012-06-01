@@ -6,6 +6,8 @@ trait Input{
   def atEnd:Boolean
   def length:Int
   def view(begin:Int, stop:Int):Input
+  def take(i:Int):(Array[Byte], Input)
+  def indexOf(b:Byte):Int
   def toArray:Array[Byte]
 }
 
@@ -28,6 +30,14 @@ case class ArrayInputView(array:Array[Byte], start:Int, end:Int) extends Input {
   def atEnd = start == end
   def length = end - start
   def view(begin:Int, stop:Int) = copy(start = begin + start, end = start + stop)
+  def take(i: Int) = (view(0, i).toArray, copy(start = start + i))
+  def indexOf(b:Byte) = {
+    val index = array.indexOf(b, start)
+    if(index > end)
+      -1
+    else
+      index - start
+  }
 
   def toArray = {
     val a = Array.ofDim[Byte](end - start)
